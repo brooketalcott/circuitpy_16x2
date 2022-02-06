@@ -1,5 +1,5 @@
 # CircuitPy_16x2
-## 16x2 display module for circutpython
+## 16x2 display module for circutpython on RaspberryPi Pico
 
 I was looking to use a 16x2 LCD screen with my raspberry pico and like lordrippon I was looking for a simple wiring setup and lacked a backpack for my pico. 
 

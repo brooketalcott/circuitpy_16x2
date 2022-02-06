@@ -24,135 +24,168 @@
 
 import time
 import board
-from digitalio import DigitalInOut, Direction
-
-# Define GPIO to LCD mapping
-LCD_RS = DigitalInOut(board.GP7)
-LCD_E = DigitalInOut(board.GP8)
-LCD_D4 = DigitalInOut(board.GP10)
-LCD_D5 = DigitalInOut(board.GP11)
-LCD_D6 = DigitalInOut(board.GP12)
-LCD_D7 = DigitalInOut(board.GP13)
-
-for pin in [LCD_RS, LCD_E, LCD_D4, LCD_D5, LCD_D6, LCD_D7]:
-    pin.direction = Direction.OUTPUT
+from digitalio import DigitalInOut
 
 
-# Define some device constants
-LCD_WIDTH = 16    # Maximum characters per line
-LCD_CHR = 1
-LCD_CMD = 0
-LCD_LINE_1 = 0x80  # LCD RAM address for the 1st line
-LCD_LINE_2 = 0xC0  # LCD RAM address for the 2nd line
-
-# Timing constants
-E_PULSE = 0.0005
-E_DELAY = 0.0005
+class InvalidPinID(AttributeError):
+    pass
 
 
-def main():
-
-    # Initialise display
-    lcd_init()
-
-    while True:
-
-        lcd_string("abcdefghijk", LCD_LINE_1)
-        lcd_string("LMNOPQRSTUV", LCD_LINE_2)
-        time.sleep(1)
-        lcd_string("1234567891011", LCD_LINE_1)
-        lcd_string("pico test", LCD_LINE_2)
-        time.sleep(1)
+class InvalidLineNumber(Exception):
+    pass
 
 
-def lcd_init():
-    # Initialise display
-    lcd_byte(0x33, LCD_CMD)  # 110011 Initialise
-    lcd_byte(0x32, LCD_CMD)  # 110010 Initialise
-    lcd_byte(0x06, LCD_CMD)  # 000110 Cursor move direction
-    lcd_byte(0x0C, LCD_CMD)  # 001100 Display On,Cursor Off, Blink Off
-    lcd_byte(0x28, LCD_CMD)  # 101000 Data length, number of lines, font size
-    lcd_byte(0x01, LCD_CMD)  # 000001 Clear display
-    time.sleep(E_DELAY)
+class LCD:
 
+    def _get_pin(self, pin: int) -> board.Pin:
+        try:
+            return getattr(board, f'GP{pin}')
+        except AttributeError:
+            raise InvalidPinID('Pin ID is not valid')
 
-def lcd_byte(bits, mode):
-    # Send byte to data pins
-    # bits = data
-    # mode = True  for character
-    #        False for command
-    PinRS = LCD_RS
-    PinRS.value = mode
-    PinD4 = LCD_D4
-    PinD5 = LCD_D5
-    PinD6 = LCD_D6
-    PinD7 = LCD_D7
+    def _register_pin(self, pin: int) -> DigitalInOut:
+        return DigitalInOut(self._get_pin(pin))
 
-    # High bits
-    PinD4.value = False
-    PinD5.value = False
-    PinD6.value = False
-    PinD7.value = False
-    if bits & 0x10 == 0x10:
-        PinD4.value = True
-    if bits & 0x20 == 0x20:
-        PinD5.value = True
-    if bits & 0x40 == 0x40:
-        PinD6.value = True
-    if bits & 0x80 == 0x80:
-        PinD7.value = True
+    def _toggle_enable(self):
+        time.sleep(self.e_delay)
+        self.enable_pin.value = True
+        time.sleep(self.e_pulse)
+        self.enable_pin.value = False
+        time.sleep(self.e_delay)
 
-    # Toggle 'Enable' pin
-    lcd_toggle_enable()
+    def _send_byte(self, bits, mode: bool) -> None:
+        ''' Send byte to data pins
+            bits = data
+            mode = True  for character
+                    False for command
+        '''
+        self.register_select_pin.value = mode
+        d4 = self.d4_pin
+        d5 = self.d5_pin
+        d6 = self.d6_pin
+        d7 = self.d7_pin
 
-    # Low bits
-    PinD4.value = False
-    PinD5.value = False
-    PinD6.value = False
-    PinD7.value = False
-    if bits & 0x01 == 0x01:
-        PinD4.value = True
-    if bits & 0x02 == 0x02:
-        PinD5.value = True
-    if bits & 0x04 == 0x04:
-        PinD6.value = True
-    if bits & 0x08 == 0x08:
-        PinD7.value = True
+        def reset_pin_values():
+            for pin in (d4, d5, d6, d7):
+                pin.value = False
 
-    # Toggle 'Enable' pin
-    lcd_toggle_enable()
+        # High bits
+        reset_pin_values()
+        if bits & 0x10 == 0x10:
+            d4.value = True
+        if bits & 0x20 == 0x20:
+            d5.value = True
+        if bits & 0x40 == 0x40:
+            d6.value = True
+        if bits & 0x80 == 0x80:
+            d7.value = True
+        self._toggle_enable()
 
+        # Low bits
+        reset_pin_values()
+        if bits & 0x01 == 0x01:
+            d4.value = True
+        if bits & 0x02 == 0x02:
+            d5.value = True
+        if bits & 0x04 == 0x04:
+            d6.value = True
+        if bits & 0x08 == 0x08:
+            d7.value = True
+        self._toggle_enable()
 
-def lcd_toggle_enable():
-    # Toggle enable
-    PinE = LCD_E
-    time.sleep(E_DELAY)
-    PinE.value = True
-    time.sleep(E_PULSE)
-    PinE.value = False
-    time.sleep(E_DELAY)
+    def _initialize_display(self):
+        # 110011 Initialize
+        self._send_byte(0x33, self.as_cmd)
+        # 110010 Initialize
+        self._send_byte(0x32, self.as_cmd)
+        # 000110 Cursor move direction
+        self._send_byte(0x06, self.as_cmd)
+        # 001100 Display On, Cursor Off, Blink Off
+        self._send_byte(0x0C, self.as_cmd)
+        # 101000 Data length, number of lines, font size
+        self._send_byte(0x28, self.as_cmd)
+        # 000001 Clear display
+        self._send_byte(0x01, self.as_cmd)
+        time.sleep(self.e_delay)
 
+    def clear(self):
+        self._send_byte(0x01, self.as_cmd)
 
-def lcd_string(message, line):
-    # Send string to display
+    def show_line(self, message, line: int = 1):
+        '''
+            Sends single-line message to display
+            params: message (str)
+            params: line (int)
+        '''
+        # Send string to display
+        if line == 1:
+            line = self.line_1
+        elif line == 2:
+            line = self.line_2
+        else:
+            raise InvalidLineNumber(
+                'This is a 16x2 display, right? Choose line 1 or 2')
 
-    MESSAGE_SPACE = LCD_WIDTH-len(message)
-    i = 0
-    print(message)
-    while i < MESSAGE_SPACE:
-        message = message + " "
-        i += 1
-    lcd_byte(line, LCD_CMD)
-    for i in range(LCD_WIDTH):
-        lcd_byte(ord(message[i]), LCD_CHR)
+        print(message)
+        width = self.lcd_width
+        self._send_byte(line, self.as_cmd)
+        for character in message + (' ' * width)[:width]:  # len == 16 w/pad
+            self._send_byte(ord(character), self.as_chr)
+
+    def show(self, message: str) -> None:
+        '''
+          Sends multi-line message to display
+          params: message (str)
+        '''
+        line_end = self.lcd_width + 1
+        lines = (message[:line_end], message[line_end:])
+        for line in lines:
+            self.show_line(line)
+
+    def __init__(self,
+                 rs_pin: int,
+                 e_pin: int,
+                 d4_pin: int,
+                 d5_pin: int,
+                 d6_pin: int,
+                 d7_pin: int) -> None:
+        self.line_1 = 0x80   # LCD RAM address for the 1st line
+        self.line_2 = 0xC0   # LCD RAM address for the 2nd line
+        self.lcd_width = 16  # Maximum characters per line
+        self.as_chr = 1
+        self.as_cmd = 0
+        self.e_pulse = 0.0005
+        self.e_delay = 0.0005
+
+        self.register_select_pin = self._register_pin(rs_pin)
+        self.enable_pin = self._register_pin(e_pin)
+        self.d4_pin = self._register_pin(d4_pin)
+        self.d5_pin = self._register_pin(d5_pin)
+        self.d6_pin = self._register_pin(d6_pin)
+        self.d7_pin = self._register_pin(d7_pin)
+
+        for pin in (self.register_select_pin,
+                    self.enable_pin,
+                    self.d4_pin,
+                    self.d5_pin,
+                    self.d6_pin,
+                    self.d7_pin):
+            pin.switch_to_output()
+
+        self._initialize_display()
 
 
 if __name__ == '__main__':
 
     try:
-        main()
+        display = LCD(7, 8, 10, 11, 12, 13)
+        while True:
+            display.show_line('abcdefghilmnopqrstuvwxyz', 1)
+            display.show_line('ABCDEFGHIJKLMNOPQRSTUVWXYZ', 2)
+            time.sleep(1)
+            display.show('This is a multi-line test for my pico')
+            time.sleep(1)
     except KeyboardInterrupt:
         pass
     finally:
-        lcd_byte(0x01, LCD_CMD)
-        lcd_string("Goodbye!", LCD_LINE_1)
+        display.clear()
