@@ -111,7 +111,7 @@ class LCD:
     def clear(self):
         self._send_byte(0x01, self.as_cmd)
 
-    def show_line(self, message, line: int = 1):
+    def show_line(self, message: str, line: int = 1):
         '''
             Sends single-line message to display
             params: message (str)
@@ -129,7 +129,7 @@ class LCD:
         print(message)
         width = self.lcd_width
         self._send_byte(line, self.as_cmd)
-        for character in message + (' ' * width)[:width]:  # len == 16 w/pad
+        for character in message + (' ' * width)[:width+1]:  # len == 16 w/pad
             self._send_byte(ord(character), self.as_chr)
 
     def show(self, message: str) -> None:
