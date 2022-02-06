@@ -1,5 +1,9 @@
 #!/usr/bin/python
+# OG Author : Matt Hawkins
 # https://forums.raspberrypi.com/viewtopic.php?t=305455
+# https://www.raspberrypi-spy.co.uk/2012/07/16x2-lcd-module-control-using-python
+# --------------------------------------
+
 # The wiring for the LCD is as follows:
 # 1 : GND
 # 2 : 5V
